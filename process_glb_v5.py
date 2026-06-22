@@ -623,18 +623,19 @@ def _select_main_mesh():
 
 
 # ============================================================
-# Main
+# Shared stage: import -> repair -> color group -> island layout
 # ============================================================
 
-def process_glb_v5(glb_filename, out_dir,
-                   color_threshold=0.08,
-                   object_scale=4,
-                   special_girafa=False,
-                   prefer_light=False,
-                   enlarge_aggressive=False,
-                   src_dir=None):
-    """Process a single model and output the GLB / ColorMap / NormalMap to out_dir."""
-    t0 = time.time()
+def _prepare_layout(glb_filename, out_dir, color_threshold, object_scale,
+                    special_girafa, prefer_light, enlarge_aggressive, src_dir):
+    """Run steps [1]-[6] (clean, import, repair, color grouping, island
+    layout + UV) deterministically and return the resulting state.
+
+    This is the part that MUST stay identical between the ColorMap build and
+    every later stud bake, so the saved ColorMap keeps matching the UV layout.
+    Always re-imports from the pristine source GLB, so it never feeds a
+    processed output back into itself.
+    """
     if src_dir is None:
         src_dir = os.path.dirname(out_dir.rstrip("\\/"))
     src_path = os.path.join(src_dir, glb_filename)
@@ -672,29 +673,139 @@ def process_glb_v5(glb_filename, out_dir,
     # [5][6] Placement + UV
     GRID, placements, cell_w = _layout_and_uv(mesh_obj, islands, enlarge_aggressive)
 
+    return {
+        "model_name": model_name, "out_dir": out_dir,
+        "mesh_obj": mesh_obj, "islands": islands, "groups": groups,
+        "placements": placements, "GRID": GRID,
+    }
+
+
+def colormap_path(out_dir, glb_filename):
+    """Return the canonical ColorMap PNG path for a model."""
+    model_name = os.path.splitext(glb_filename)[0]
+    return os.path.join(out_dir, model_name + "_ColorMap.png")
+
+
+# ============================================================
+# Stage 1: build the ColorMap (run ONCE per model)
+# ============================================================
+
+def build_colormap(glb_filename, out_dir,
+                   color_threshold=0.08,
+                   object_scale=4,
+                   special_girafa=False,
+                   prefer_light=False,
+                   enlarge_aggressive=False,
+                   src_dir=None):
+    """Run steps [1]-[7] and save only the ColorMap PNG.
+
+    Call this once per model. The resulting PNG is the frozen color result;
+    bake_and_export() reuses it verbatim and never regenerates it.
+    """
+    t0 = time.time()
+    st = _prepare_layout(glb_filename, out_dir, color_threshold, object_scale,
+                         special_girafa, prefer_light, enlarge_aggressive, src_dir)
     # [7] ColorMap
-    color_img = _make_colormap(mesh_obj, islands, placements, GRID,
-                               model_name, out_dir)
+    _make_colormap(st["mesh_obj"], st["islands"], st["placements"],
+                   st["GRID"], st["model_name"], st["out_dir"])
+    return {
+        "model": st["model_name"],
+        "islands": len(st["islands"]),
+        "colors": len(st["groups"]),
+        "grid": st["GRID"],
+        "sec": round(time.time() - t0, 1),
+        "colormap": colormap_path(st["out_dir"], glb_filename),
+    }
+
+
+# ============================================================
+# Stage 2: bake studs + export (re-runnable, reuses the ColorMap)
+# ============================================================
+
+def bake_and_export(glb_filename, out_dir,
+                    color_threshold=0.08,
+                    object_scale=4,
+                    special_girafa=False,
+                    prefer_light=False,
+                    enlarge_aggressive=False,
+                    src_dir=None):
+    """Re-bake the stud NormalMap at the current object_scale and export the GLB.
+
+    Loads the EXISTING ColorMap PNG instead of regenerating it, so it can be
+    re-run any number of times (e.g. to tune object_scale) without disturbing
+    the approved colors. The color-related parameters MUST match those used by
+    build_colormap so the recomputed UV layout still matches the saved ColorMap.
+    """
+    t0 = time.time()
+    st = _prepare_layout(glb_filename, out_dir, color_threshold, object_scale,
+                         special_girafa, prefer_light, enlarge_aggressive, src_dir)
+
+    cpath = colormap_path(st["out_dir"], glb_filename)
+    if not os.path.exists(cpath):
+        raise FileNotFoundError(
+            "ColorMap not found - run build_colormap() first: " + cpath)
+    color_img = bpy.data.images.load(cpath, check_existing=True)
+    color_img.colorspace_settings.name = 'sRGB'
 
     # [8] NormalMap bake
     normal_img, orig_mats, tmp_mat = _bake_normalmap(
-        mesh_obj, model_name, out_dir, object_scale)
+        st["mesh_obj"], st["model_name"], st["out_dir"], object_scale)
 
     # [9] Rebuild
-    _rebuild_material(mesh_obj, model_name, color_img, normal_img,
+    _rebuild_material(st["mesh_obj"], st["model_name"], color_img, normal_img,
                       orig_mats, tmp_mat, special_girafa)
 
     # [10] Export
-    out_glb = os.path.join(out_dir, glb_filename)
-    _export_glb(mesh_obj, out_glb)
+    out_glb = os.path.join(st["out_dir"], glb_filename)
+    _export_glb(st["mesh_obj"], out_glb)
 
-    dt = time.time() - t0
     return {
-        "model": model_name,
-        "islands": len(islands),
-        "colors": len(groups),
-        "grid": GRID,
-        "sec": round(dt, 1),
+        "model": st["model_name"],
+        "grid": st["GRID"],
+        "object_scale": object_scale,
+        "sec": round(time.time() - t0, 1),
+        "out": out_glb,
+    }
+
+
+# ============================================================
+# Main (one-shot: ColorMap + NormalMap + export in a single call)
+# ============================================================
+
+def process_glb_v5(glb_filename, out_dir,
+                   color_threshold=0.08,
+                   object_scale=4,
+                   special_girafa=False,
+                   prefer_light=False,
+                   enlarge_aggressive=False,
+                   src_dir=None):
+    """Process a single model and output the GLB / ColorMap / NormalMap to out_dir."""
+    t0 = time.time()
+    st = _prepare_layout(glb_filename, out_dir, color_threshold, object_scale,
+                         special_girafa, prefer_light, enlarge_aggressive, src_dir)
+
+    # [7] ColorMap
+    color_img = _make_colormap(st["mesh_obj"], st["islands"], st["placements"],
+                               st["GRID"], st["model_name"], st["out_dir"])
+
+    # [8] NormalMap bake
+    normal_img, orig_mats, tmp_mat = _bake_normalmap(
+        st["mesh_obj"], st["model_name"], st["out_dir"], object_scale)
+
+    # [9] Rebuild
+    _rebuild_material(st["mesh_obj"], st["model_name"], color_img, normal_img,
+                      orig_mats, tmp_mat, special_girafa)
+
+    # [10] Export
+    out_glb = os.path.join(st["out_dir"], glb_filename)
+    _export_glb(st["mesh_obj"], out_glb)
+
+    return {
+        "model": st["model_name"],
+        "islands": len(st["islands"]),
+        "colors": len(st["groups"]),
+        "grid": st["GRID"],
+        "sec": round(time.time() - t0, 1),
         "out": out_glb,
     }
 

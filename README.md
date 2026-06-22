@@ -50,12 +50,46 @@ Roblox Studio.
   something like `gradient`, `gradient pallete`, `temp_1`, etc.). The script
   uses it to derive per-face colors.
 
-## Usage
+## Install as a Blender add-on (recommended)
 
-The script is meant to be run **inside Blender** (for example via the Python
-console, the scripting workspace, or an `execute_blender_code` integration).
-Make sure `process_glb_v5.py` is on Blender's Python path (e.g. drop it next to
-your `.blend` file or add its folder to `sys.path`).
+The repository is also a Blender add-on (`__init__.py` + `process_glb_v5.py`).
+
+1. Download/clone this repo and zip the folder (so the zip contains
+   `__init__.py` and `process_glb_v5.py` at its top level).
+2. In Blender: **Edit > Preferences > Add-ons > Install...**, pick the zip, and
+   enable **AutoStud**.
+3. Open the **N-panel** in the 3D Viewport and switch to the **AutoStud** tab.
+
+### One-model-at-a-time workflow
+
+The panel is built around reviewing one model at a time, and deliberately
+splits the work into two stages so the color result is computed **only once**:
+
+1. **Pick a Source GLB.** The recommended preset for that model (from
+   `KNOWN_PARAMS`) is filled in automatically, and the output folder defaults to
+   a `_studout` subfolder next to the GLB.
+2. **1. Build ColorMap** — runs the color/island/UV stage once and saves
+   `<model>_ColorMap.png`. After this the color parameters are **locked** so they
+   can't drift. (Use **Rebuild ColorMap** to unlock and redo them.)
+3. **Adjust *Stud Scale*** and press **2. Bake Studs & Export** as many times as
+   you like. This re-bakes the stud NormalMap and exports the GLB while
+   **reusing the saved ColorMap** — it never regenerates it, so the colors you
+   approved stay frozen. Both stages always re-import the pristine source GLB,
+   so re-running never corrupts the result.
+
+## Run as a script (advanced)
+
+The core can also be driven directly **inside Blender** (Python console,
+scripting workspace, or an `execute_blender_code` integration). Make sure
+`process_glb_v5.py` is on Blender's Python path (e.g. drop it next to your
+`.blend` file or add its folder to `sys.path`).
+
+The module exposes three entry points:
+
+- `build_colormap(glb, out_dir, ...)` — stage 1 only (save the ColorMap).
+- `bake_and_export(glb, out_dir, ...)` — stage 2 only (re-bake studs + export,
+  reusing the existing ColorMap).
+- `process_glb_v5(glb, out_dir, ...)` — one-shot: both stages in a single call.
 
 ### Process a single model
 
