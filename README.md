@@ -24,7 +24,7 @@ For each input GLB, `process_glb_v5.py` runs the following pipeline:
    seams appear and vertex sharing survives export.
 7. **ColorMap** — render a flat per-island color texture (1024×1024 PNG).
 8. **NormalMap bake** — box-project the tileable stud normal texture
-   (`Studit_nmap.png`) and bake it to a `NormalMap` (1024×1024 PNG).
+   (bundled `Stud.png`) and bake it to a `NormalMap` (1024×1024 PNG).
 9. **Material rebuild** — reconstruct a single Principled BSDF using the
    ColorMap (Base Color) and NormalMap (Normal), re-attach the Armature
    modifier, strip scale F-curves, and pack the textures.
@@ -37,15 +37,12 @@ Roblox Studio.
 
 - **Blender 5.0** (the script uses the Blender 5.0 slotted Action / channelbag
   API and the Cycles bake pipeline).
-- The **`stud_it`** add-on installed, because the script reads its bundled
-  tileable normal texture:
-
-  ```
-  %APPDATA%\Blender Foundation\Blender\5.0\scripts\addons\stud_it\textures\Studit_nmap.png
-  ```
-
-  If your `stud_it` install lives elsewhere, edit the `STUDIT_NMAP` constant at
-  the top of `process_glb_v5.py`.
+- The tileable **stud normal map**. A ready-to-use `Stud.png` ships with this
+  repo and is used automatically (it must sit next to `process_glb_v5.py`), so
+  the **`stud_it` add-on is not required**. If `Stud.png` is missing, the script
+  falls back to the stud_it add-on's texture at
+  `%APPDATA%\Blender Foundation\Blender\5.0\scripts\addons\stud_it\textures\Studit_nmap.png`.
+  To use a different stud texture, just replace `Stud.png`.
 - The source GLB must contain a built-in **gradient / palette** image (named
   something like `gradient`, `gradient pallete`, `temp_1`, etc.). The script
   uses it to derive per-face colors.

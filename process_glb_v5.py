@@ -30,11 +30,27 @@ from mathutils import Vector
 # Constants / environment
 # ============================================================
 
-# Stud tile material (the path written in the spec is wrong; use the real path).
-STUDIT_NMAP = os.path.join(
+# Stud tile normal map.
+# Prefer the Stud.png bundled next to this script, so the stud_it add-on is NOT
+# required. Fall back to the stud_it add-on's texture if the bundled file is
+# missing (the path written in the spec is wrong; this is the real one).
+try:
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+except NameError:  # __file__ undefined when exec'd as raw source
+    _HERE = os.getcwd()
+
+STUD_NMAP_BUNDLED = os.path.join(_HERE, "Stud.png")
+STUD_NMAP_FALLBACK = os.path.join(
     os.environ.get("APPDATA", ""),
     r"Blender Foundation\Blender\5.0\scripts\addons\stud_it\textures\Studit_nmap.png",
 )
+
+
+def _resolve_stud_nmap():
+    """Return the stud normal-map path: bundled Stud.png first, else stud_it."""
+    if os.path.exists(STUD_NMAP_BUNDLED):
+        return STUD_NMAP_BUNDLED
+    return STUD_NMAP_FALLBACK
 
 IMG_SIZE = 1024
 BAKE_SAMPLES = 32
@@ -405,10 +421,13 @@ def _make_colormap(obj, islands, placements, GRID, model_name, out_dir):
 # ============================================================
 
 def _bake_normalmap(obj, model_name, out_dir, object_scale):
-    if not os.path.exists(STUDIT_NMAP):
-        raise FileNotFoundError("Studit_nmap.png not found: " + STUDIT_NMAP)
+    stud_path = _resolve_stud_nmap()
+    if not os.path.exists(stud_path):
+        raise FileNotFoundError(
+            "Stud normal map not found. Place a Stud.png next to this script, "
+            "or install the stud_it add-on (expected at: %s)" % STUD_NMAP_FALLBACK)
 
-    stud_img = bpy.data.images.load(STUDIT_NMAP, check_existing=True)
+    stud_img = bpy.data.images.load(stud_path, check_existing=True)
     stud_img.colorspace_settings.name = 'Non-Color'
 
     # Temporary material (overrides every slot).
