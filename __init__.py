@@ -28,12 +28,16 @@ bl_info = {
 }
 
 import os
+import importlib
 
 import bpy
 from bpy.props import (StringProperty, IntProperty, FloatProperty,
                        BoolProperty, PointerProperty)
 
 from . import process_glb_v5 as P
+# Reload the core module so that re-installing / re-enabling the add-on always
+# picks up the latest process_glb_v5.py instead of a cached older copy.
+importlib.reload(P)
 
 
 # ============================================================
