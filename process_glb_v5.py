@@ -923,6 +923,20 @@ def preview_open_model(mesh_obj=None, out_dir=None,
     }
 
 
+def export_object_glb(mesh_obj, out_glb):
+    """Export an already-processed mesh (+ its armature, with animation) to a
+    GLB. Used to save the in-scene preview result without re-importing any
+    source file. The mesh is expected to already carry the rebuilt ColorMap +
+    NormalMap material (e.g. the output of preview_open_model)."""
+    if mesh_obj is None or mesh_obj.type != 'MESH':
+        raise RuntimeError("No processed MESH to export")
+    out_dir = os.path.dirname(out_glb)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    _export_glb(mesh_obj, out_glb)
+    return {"out": out_glb, "object": mesh_obj.name}
+
+
 # Quick parameter reference (special cases from the spec).
 KNOWN_PARAMS = {
     "La Vaca Saturno Saturnita": dict(object_scale=8, color_threshold=0.18,

@@ -75,7 +75,12 @@ scrambled). The original mesh is kept (hidden) for before/after comparison.
 Tweak *Stud Scale* and press the button again to re-preview from the clean
 original. This mode does not write any files.
 
-### Export workflow (one model at a time)
+When you are happy with the preview, set **Export To** and press **Export
+Preview as GLB** — it saves the model you just previewed (ColorMap + studs +
+animation baked in) straight to disk. **No Source GLB file selection is needed**;
+it exports the open model directly.
+
+### Export from a GLB file (one model at a time)
 
 The export half of the panel deliberately splits the work into two stages so the
 color result is computed **only once**:

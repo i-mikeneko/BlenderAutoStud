@@ -100,6 +100,13 @@ class AutoStudProps(bpy.types.PropertyGroup):
                     "Higher = smaller, denser studs",
     )
 
+    # --- Open-model export ---
+    export_path: StringProperty(
+        name="Export To",
+        description="GLB file to write when exporting the previewed open model",
+        subtype='FILE_PATH',
+    )
+
     # --- State ---
     colormap_built: BoolProperty(default=False)
     # Tracking for the in-scene preview, so a re-preview replaces the previous
@@ -196,6 +203,13 @@ class AUTOSTUD_OT_preview_open(bpy.types.Operator):
 
         props.preview_obj = r["object"]
         props.preview_src = r["source"]
+        # Suggest an export path so the user can save without picking a Source.
+        if not props.export_path:
+            folder = bpy.path.abspath(props.out_dir) if props.out_dir else ""
+            if not folder:
+                folder = os.path.dirname(bpy.data.filepath)
+            if folder:
+                props.export_path = os.path.join(folder, r["source"] + "_stud.glb")
         target = bpy.data.objects.get(r["object"])
         if target is not None:
             bpy.ops.object.select_all(action='DESELECT')
@@ -206,6 +220,42 @@ class AUTOSTUD_OT_preview_open(bpy.types.Operator):
                     "Preview: %d islands, %d colors, grid %d, scale %d (%.1fs)"
                     % (r["islands"], r["colors"], r["grid"],
                        props.object_scale, r["sec"]))
+        return {'FINISHED'}
+
+
+class AUTOSTUD_OT_export_open(bpy.types.Operator):
+    bl_idname = "autostud.export_open"
+    bl_label = "Export Preview as GLB"
+    bl_description = ("Export the previewed open model to a GLB. No Source file "
+                      "needed - it saves the mesh you just previewed, with the "
+                      "ColorMap + studs and animation baked in.")
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        props = context.scene.autostud
+        obj = bpy.data.objects.get(props.preview_obj) if props.preview_obj else None
+        if obj is None:
+            # Fall back to the active object if it is a mesh.
+            act = context.view_layer.objects.active
+            obj = act if (act is not None and act.type == 'MESH') else None
+        if obj is None:
+            self.report({'ERROR'},
+                        "Nothing to export. Run 'Preview on Open Model' first.")
+            return {'CANCELLED'}
+
+        out = bpy.path.abspath(props.export_path)
+        if not out:
+            self.report({'ERROR'}, "Set the 'Export To' path first.")
+            return {'CANCELLED'}
+        if not out.lower().endswith(".glb"):
+            out += ".glb"
+
+        try:
+            r = P.export_object_glb(obj, out)
+        except Exception as e:
+            self.report({'ERROR'}, "Export failed: %s" % e)
+            return {'CANCELLED'}
+        self.report({'INFO'}, "Exported %s" % os.path.basename(r["out"]))
         return {'FINISHED'}
 
 
@@ -294,18 +344,25 @@ class AUTOSTUD_PT_panel(bpy.types.Panel):
         props = context.scene.autostud
         built = props.colormap_built
 
-        # --- Preview on the model open in the scene (no import/export) ---
+        # --- Preview / export the model open in the scene (no import) ---
         box = layout.box()
-        box.label(text="Preview on Open Model", icon='HIDE_OFF')
+        box.label(text="Open Model (preview + export)", icon='HIDE_OFF')
         box.prop(props, "color_threshold")
         box.prop(props, "special_girafa")
         box.prop(props, "object_scale")
         box.operator("autostud.preview_open", icon='RESTRICT_RENDER_OFF')
         box.label(text="Select a mesh, then preview. Original is kept.",
                   icon='INFO')
+        box.separator()
+        box.prop(props, "export_path")
+        erow = box.row()
+        erow.enabled = bool(props.preview_obj)
+        erow.operator("autostud.export_open", icon='EXPORT')
+        if not props.preview_obj:
+            box.label(text="Preview first, then export.", icon='INFO')
 
         layout.separator()
-        layout.label(text="Export to file", icon='EXPORT')
+        layout.label(text="Export from a GLB file", icon='FILE_FOLDER')
 
         col = layout.column()
         col.prop(props, "glb_path")
@@ -345,6 +402,7 @@ class AUTOSTUD_PT_panel(bpy.types.Panel):
 _classes = (
     AutoStudProps,
     AUTOSTUD_OT_preview_open,
+    AUTOSTUD_OT_export_open,
     AUTOSTUD_OT_build_colormap,
     AUTOSTUD_OT_bake_export,
     AUTOSTUD_OT_unlock_colors,
