@@ -49,13 +49,30 @@ Roblox Studio.
 
 ## Install as a Blender add-on (recommended)
 
-The repository is also a Blender add-on (`__init__.py` + `process_glb_v5.py`).
+Requires **Blender 5.0+**.
 
-1. Download/clone this repo and zip the folder (so the zip contains
-   `__init__.py` and `process_glb_v5.py` at its top level).
-2. In Blender: **Edit > Preferences > Add-ons > Install...**, pick the zip, and
-   enable **AutoStud**.
-3. Open the **N-panel** in the 3D Viewport and switch to the **AutoStud** tab.
+1. **Download `AutoStud.zip`** from the
+   [latest release](https://github.com/i-mikeneko/BlenderAutoStud/releases/latest)
+   (under *Assets*). Do **not** unzip it.
+2. In Blender, open **Edit > Preferences > Add-ons**.
+3. Click the dropdown (▼) in the top-right and choose **Install from Disk...**
+   (older Blender: the **Install...** button), then select the downloaded
+   `AutoStud.zip`.
+4. Tick the checkbox next to **AutoStud** to enable it.
+5. In the 3D Viewport, press **`N`** to open the sidebar and switch to the
+   **AutoStud** tab.
+
+> **Building the zip yourself:** if you cloned the repo instead, zip the folder
+> so the archive contains `__init__.py`, `process_glb_v5.py` and `Stud.png` at
+> its top level, then install that zip the same way.
+
+### Updating to a newer version
+
+Blender caches the add-on's code, so to update cleanly:
+
+1. **Edit > Preferences > Add-ons**, find **AutoStud**, and click **Remove**.
+2. **Fully restart Blender** (this clears the cached module).
+3. Install the new `AutoStud.zip` as above.
 
 ### Preview on the open model (no files)
 
