@@ -360,21 +360,33 @@ def _layout_and_uv(obj, islands, enlarge_aggressive):
 # ============================================================
 
 def _make_colormap(obj, islands, placements, GRID, model_name, out_dir):
+    """v2: float cell boundary calculation + average color fill for unused cells
+    to eliminate black residual pixels at cell edges."""
     img = bpy.data.images.new(model_name + "_ColorMap", IMG_SIZE, IMG_SIZE, alpha=True)
     img.colorspace_settings.name = 'sRGB'
-    px = [0.0, 0.0, 0.0, 1.0] * (IMG_SIZE * IMG_SIZE)
-    cell_px = IMG_SIZE // GRID
+    # Fill background with average island color (prevents black pixel artifacts)
+    if islands:
+        avg = [
+            sum(i["color"][0] for i in islands) / len(islands),
+            sum(i["color"][1] for i in islands) / len(islands),
+            sum(i["color"][2] for i in islands) / len(islands),
+        ]
+    else:
+        avg = [0.5, 0.5, 0.5]
+    px = [avg[0], avg[1], avg[2], 1.0] * (IMG_SIZE * IMG_SIZE)
+    cell_pxf = IMG_SIZE / GRID  # float for precise boundaries
 
     def fill_cell(c, r, span, col):
-        x0 = c * cell_px
-        y0 = r * cell_px
-        x1 = min(IMG_SIZE, x0 + cell_px * span)
-        y1 = min(IMG_SIZE, y0 + cell_px * span)
+        x0 = int(c * cell_pxf)
+        y0 = int(r * cell_pxf)
+        x1 = int((c + span) * cell_pxf)
+        y1 = int((r + span) * cell_pxf)
+        if (c + span) == GRID: x1 = IMG_SIZE
+        if (r + span) == GRID: y1 = IMG_SIZE
         for y in range(y0, y1):
-            base = (y * IMG_SIZE + x0) * 4
             for x in range(x0, x1):
-                i = base + (x - x0) * 4
-                px[i] = col[0]; px[i + 1] = col[1]; px[i + 2] = col[2]; px[i + 3] = 1.0
+                i = (y * IMG_SIZE + x) * 4
+                px[i] = col[0]; px[i+1] = col[1]; px[i+2] = col[2]; px[i+3] = 1.0
 
     for isl_i, isl in enumerate(islands):
         c, r, span = placements[isl_i]
