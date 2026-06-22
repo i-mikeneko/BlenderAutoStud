@@ -57,7 +57,28 @@ The repository is also a Blender add-on (`__init__.py` + `process_glb_v5.py`).
    enable **AutoStud**.
 3. Open the **N-panel** in the 3D Viewport and switch to the **AutoStud** tab.
 
-### One-model-at-a-time workflow
+### Preview on the open model (no files)
+
+Use this to *see* how the studs land on a model before committing to anything:
+
+1. Import / open a model in the scene (with its gradient palette) and select its
+   mesh.
+2. Adjust *Color Threshold*, *Special*, and *Stud Scale*.
+3. Press **Preview on Open Model**.
+
+The add-on copies the selected mesh, processes the copy, and switches the
+viewport to **Material Preview** so you immediately see the generated flat
+ColorMap **plus** the baked studs applied to the model. The processing always
+runs through the material rebuild, so the preview shows the per-island ColorMap
+— *not* the original gradient texture (otherwise the colors would look
+scrambled). The original mesh is kept (hidden) for before/after comparison.
+Tweak *Stud Scale* and press the button again to re-preview from the clean
+original. This mode does not write any files.
+
+### Export workflow (one model at a time)
+
+The export half of the panel deliberately splits the work into two stages so the
+color result is computed **only once**:
 
 The panel is built around reviewing one model at a time, and deliberately
 splits the work into two stages so the color result is computed **only once**:

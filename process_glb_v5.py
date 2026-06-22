@@ -645,6 +645,31 @@ def _select_main_mesh():
 # Shared stage: import -> repair -> color group -> island layout
 # ============================================================
 
+def _layout_from_object(mesh_obj, grad, color_threshold,
+                        special_girafa, prefer_light, enlarge_aggressive):
+    """Run steps [2]-[6] on an already-loaded mesh object: repair, color
+    sampling/grouping, island splitting and the UV layout. Returns
+    (islands, groups, placements, GRID)."""
+    # [2] Mesh repair
+    repair_mesh(mesh_obj)
+
+    # [3] Color sampling & grouping
+    face_cols = _sample_gradient_colors(mesh_obj, grad)
+    groups, face_group = _group_colors(face_cols, color_threshold)
+    if prefer_light:
+        # Bias each group's representative color toward the brightest color
+        # (simplified: just keep the average color as-is for now).
+        pass
+
+    # [4] Island splitting
+    islands = _build_islands(mesh_obj, face_group, groups,
+                             special_girafa, prefer_light)
+
+    # [5][6] Placement + UV
+    GRID, placements, cell_w = _layout_and_uv(mesh_obj, islands, enlarge_aggressive)
+    return islands, groups, placements, GRID
+
+
 def _prepare_layout(glb_filename, out_dir, color_threshold, object_scale,
                     special_girafa, prefer_light, enlarge_aggressive, src_dir):
     """Run steps [1]-[6] (clean, import, repair, color grouping, island
@@ -674,23 +699,9 @@ def _prepare_layout(glb_filename, out_dir, color_threshold, object_scale,
         raise RuntimeError("No MESH object")
     bpy.context.view_layer.objects.active = mesh_obj
 
-    # [2] Mesh repair
-    repair_mesh(mesh_obj)
-
-    # [3] Color sampling & grouping
-    face_cols = _sample_gradient_colors(mesh_obj, grad)
-    groups, face_group = _group_colors(face_cols, color_threshold)
-    if prefer_light:
-        # Bias each group's representative color toward the brightest color
-        # (simplified: just keep the average color as-is for now).
-        pass
-
-    # [4] Island splitting
-    islands = _build_islands(mesh_obj, face_group, groups,
-                             special_girafa, prefer_light)
-
-    # [5][6] Placement + UV
-    GRID, placements, cell_w = _layout_and_uv(mesh_obj, islands, enlarge_aggressive)
+    islands, groups, placements, GRID = _layout_from_object(
+        mesh_obj, grad, color_threshold, special_girafa,
+        prefer_light, enlarge_aggressive)
 
     return {
         "model_name": model_name, "out_dir": out_dir,
@@ -826,6 +837,89 @@ def process_glb_v5(glb_filename, out_dir,
         "grid": st["GRID"],
         "sec": round(time.time() - t0, 1),
         "out": out_glb,
+    }
+
+
+# ============================================================
+# Preview on the model already open in the scene (no import/export)
+# ============================================================
+
+def _duplicate_object(obj):
+    """Return a full copy of obj (own mesh data + modifiers) linked into the
+    same collections, so the original is left untouched."""
+    new = obj.copy()
+    new.data = obj.data.copy()
+    new.name = obj.name + "_stud"
+    colls = list(obj.users_collection)
+    if not colls:
+        colls = [bpy.context.scene.collection]
+    for coll in colls:
+        coll.objects.link(new)
+    return new
+
+
+def preview_open_model(mesh_obj=None, out_dir=None,
+                       color_threshold=0.08,
+                       object_scale=4,
+                       special_girafa=False,
+                       prefer_light=False,
+                       enlarge_aggressive=False,
+                       duplicate=True):
+    """Process the model already open in the scene and leave the result in the
+    viewport so the stud look can be checked. Does NOT export.
+
+    Runs the full pipeline INCLUDING _rebuild_material, so the previewed mesh
+    shows the generated flat ColorMap (sampled per island) plus the baked stud
+    NormalMap - not the original gradient texture. Without the rebuild the
+    model would still display the gradient and the colors would look scrambled.
+
+    With duplicate=True the original object is copied and only the copy is
+    processed, so the source mesh stays intact for before/after comparison.
+    Returns info plus the name of the processed object.
+    """
+    t0 = time.time()
+    if mesh_obj is None:
+        mesh_obj = bpy.context.view_layer.objects.active
+    if mesh_obj is None or mesh_obj.type != 'MESH':
+        raise RuntimeError("Select a MESH object to preview first")
+
+    if out_dir is None:
+        import tempfile
+        out_dir = os.path.join(tempfile.gettempdir(), "autostud_preview")
+    os.makedirs(out_dir, exist_ok=True)
+
+    grad = rename_gradient_image()
+    if grad is None:
+        raise RuntimeError("Gradient image not found in the scene "
+                           "(is the model imported with its palette?)")
+
+    if duplicate:
+        target = _duplicate_object(mesh_obj)
+        mesh_obj.hide_set(True)  # hide the original; show only the processed copy
+    else:
+        target = mesh_obj
+    model_name = target.name
+
+    islands, groups, placements, GRID = _layout_from_object(
+        target, grad, color_threshold, special_girafa,
+        prefer_light, enlarge_aggressive)
+
+    # [7] ColorMap  ->  [8] bake studs  ->  [9] apply the ColorMap + studs.
+    color_img = _make_colormap(target, islands, placements, GRID,
+                               model_name, out_dir)
+    normal_img, orig_mats, tmp_mat = _bake_normalmap(
+        target, model_name, out_dir, object_scale)
+    _rebuild_material(target, model_name, color_img, normal_img,
+                      orig_mats, tmp_mat, special_girafa)
+
+    return {
+        "model": model_name,
+        "islands": len(islands),
+        "colors": len(groups),
+        "grid": GRID,
+        "sec": round(time.time() - t0, 1),
+        "object": target.name,
+        "source": mesh_obj.name,
     }
 
 

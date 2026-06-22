@@ -102,6 +102,10 @@ class AutoStudProps(bpy.types.PropertyGroup):
 
     # --- State ---
     colormap_built: BoolProperty(default=False)
+    # Tracking for the in-scene preview, so a re-preview replaces the previous
+    # copy and re-derives from the pristine original.
+    preview_obj: StringProperty(default="")
+    preview_src: StringProperty(default="")
 
 
 # ============================================================
@@ -119,6 +123,17 @@ def _resolve_paths(props):
     return os.path.basename(glb), os.path.dirname(glb), out_dir
 
 
+def _show_material_preview(context):
+    """Switch every 3D viewport to Material Preview shading so the ColorMap and
+    baked studs are actually visible (Solid shading hides textures)."""
+    for area in context.screen.areas:
+        if area.type != 'VIEW_3D':
+            continue
+        for space in area.spaces:
+            if space.type == 'VIEW_3D':
+                space.shading.type = 'MATERIAL'
+
+
 def _common_kwargs(props, src_dir):
     return dict(
         color_threshold=props.color_threshold,
@@ -133,6 +148,66 @@ def _common_kwargs(props, src_dir):
 # ============================================================
 # Operators
 # ============================================================
+
+class AUTOSTUD_OT_preview_open(bpy.types.Operator):
+    bl_idname = "autostud.preview_open"
+    bl_label = "Preview on Open Model"
+    bl_description = ("Process the active model already open in the scene and "
+                      "show the result (ColorMap + studs) in the viewport. "
+                      "Works on a copy; the original is kept and hidden. "
+                      "Does not export - adjust Stud Scale and re-preview freely.")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.autostud
+        view = context.view_layer
+
+        # Clean up the previous preview: if the active object is last run's
+        # copy, drop it and restore the original so we re-derive from a clean
+        # mesh rather than re-processing an already-processed copy.
+        prev = bpy.data.objects.get(props.preview_obj) if props.preview_obj else None
+        src = bpy.data.objects.get(props.preview_src) if props.preview_src else None
+        active = view.objects.active
+        if prev is not None and active is prev and src is not None:
+            bpy.data.objects.remove(prev, do_unlink=True)
+            src.hide_set(False)
+            view.objects.active = src
+            src.select_set(True)
+            active = src
+
+        if active is None or active.type != 'MESH':
+            self.report({'ERROR'},
+                        "Select the MESH you want to preview (active object).")
+            return {'CANCELLED'}
+
+        out_dir = bpy.path.abspath(props.out_dir) if props.out_dir else None
+        try:
+            r = P.preview_open_model(
+                active, out_dir=out_dir,
+                color_threshold=props.color_threshold,
+                object_scale=props.object_scale,
+                special_girafa=props.special_girafa,
+                prefer_light=props.prefer_light,
+                enlarge_aggressive=props.enlarge_aggressive,
+                duplicate=True)
+        except Exception as e:
+            self.report({'ERROR'}, "Preview failed: %s" % e)
+            return {'CANCELLED'}
+
+        props.preview_obj = r["object"]
+        props.preview_src = r["source"]
+        target = bpy.data.objects.get(r["object"])
+        if target is not None:
+            bpy.ops.object.select_all(action='DESELECT')
+            target.select_set(True)
+            view.objects.active = target
+        _show_material_preview(context)
+        self.report({'INFO'},
+                    "Preview: %d islands, %d colors, grid %d, scale %d (%.1fs)"
+                    % (r["islands"], r["colors"], r["grid"],
+                       props.object_scale, r["sec"]))
+        return {'FINISHED'}
+
 
 class AUTOSTUD_OT_build_colormap(bpy.types.Operator):
     bl_idname = "autostud.build_colormap"
@@ -219,6 +294,19 @@ class AUTOSTUD_PT_panel(bpy.types.Panel):
         props = context.scene.autostud
         built = props.colormap_built
 
+        # --- Preview on the model open in the scene (no import/export) ---
+        box = layout.box()
+        box.label(text="Preview on Open Model", icon='HIDE_OFF')
+        box.prop(props, "color_threshold")
+        box.prop(props, "special_girafa")
+        box.prop(props, "object_scale")
+        box.operator("autostud.preview_open", icon='RESTRICT_RENDER_OFF')
+        box.label(text="Select a mesh, then preview. Original is kept.",
+                  icon='INFO')
+
+        layout.separator()
+        layout.label(text="Export to file", icon='EXPORT')
+
         col = layout.column()
         col.prop(props, "glb_path")
         col.prop(props, "out_dir")
@@ -256,6 +344,7 @@ class AUTOSTUD_PT_panel(bpy.types.Panel):
 
 _classes = (
     AutoStudProps,
+    AUTOSTUD_OT_preview_open,
     AUTOSTUD_OT_build_colormap,
     AUTOSTUD_OT_bake_export,
     AUTOSTUD_OT_unlock_colors,
